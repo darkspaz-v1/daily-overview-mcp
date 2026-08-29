@@ -1,0 +1,8 @@
+# Local scratch — atomic-write temp files
+*.tmp
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
