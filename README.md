@@ -1,118 +1,63 @@
-# Daily Overview — MCP Server
+# daily-overview-mcp
 
-A local [Model Context Protocol](https://modelcontextprotocol.io) server over the Daily
-Overview app, so any MCP client can read and update your planner in natural language:
-*"what does my day look like?"*, *"add 'renew insurance' due Friday,"* *"is it going to
-rain tomorrow?"*
-
-Built in Python with the official MCP SDK (`FastMCP`). Weather comes from keyless public
-APIs — **no API keys to configure.**
-
-## Shared state, not a copy
-
-This server reads and writes the **same** `planner.md` that the dashboard and the Jarvis
-spoken briefing use, in the same format, parsed with the same rules as `overview_app.py`.
-Add a task here and it shows up in the dashboard; check one off in the dashboard and it
-disappears here. There is one source of truth.
+MCP server over a markdown planner and a live weather lookup — tasks, scheduled events, and a combined
+daily briefing.
 
 ## Tools
 
-| Tool | Purpose |
-|------|---------|
-| `overview_get_tasks` | Today's planner, categorized by urgency |
-| `overview_add_task` | Add a to-do, optionally with a due date |
-| `overview_complete_task` | Check a task off by fuzzy name match |
-| `overview_add_scheduled` | Add a dated (optionally timed) event |
-| `overview_remove_item` | Delete an item from any planner section |
-| `overview_get_weather` | Current conditions + 1–7 day forecast |
-| `overview_briefing` | Weather + planner in one call |
+| Tool | Does |
+|---|---|
+| `overview_get_tasks` | Read open tasks from `planner.md` |
+| `overview_add_task` | Append a task |
+| `overview_complete_task` | Mark one done |
+| `overview_add_scheduled` | Add a dated/timed item |
+| `overview_remove_item` | Remove a task or scheduled item |
+| `overview_get_weather` | IP-geolocated forecast, `days` configurable |
+| `overview_briefing` | Weather plus the day's tasks in one call |
 
-`overview_briefing` is the one to reach for on "how's my day looking" — it saves a
-round-trip, and still returns the planner half if the weather lookup fails.
+## The design decision worth stating
 
-### Categorization
+The source of truth is a **plain markdown file a human edits by hand**, not a database. That means the
+server has to tolerate a file that changed underneath it and formatting that a person wrote, which is
+the real constraint — it parses and rewrites in place rather than owning the format.
 
-`overview_get_tasks` returns tasks grouped the way the dashboard renders them:
+`overview_briefing` exists because the common request ("what does my day look like?") otherwise costs
+two round trips and a client-side join.
 
-- **overdue** — due date in the past
-- **dueToday** / **scheduledToday** — today's tasks and events
-- **open** — undated, or due in the future
-- **recurring** — daily routine
-- **upcoming** — scheduled events in the next 7 days
+## Notes
 
-Completed (`[x]`) items are excluded everywhere.
+- Tests run against a **temporary planner file**, so they never touch a real `planner.md`.
+- The weather tools need network. If the lookup fails, the test asserts the **error path** behaved
+  correctly instead of failing the run — a test suite that only passes online is not a test suite.
 
-## Planner format
+**30 checks pass.**
 
-Unchanged from the app's own convention:
+## About MCP
 
-```markdown
-## Recurring
-- [ ] Check YouTube Studio analytics
-
-## Scheduled
-- 2026-09-01 19:00 Pickleball game
-
-## Tasks
-- [ ] Renew insurance (due: 2026-09-05)
-```
-
-## Weather
-
-Location is auto-detected from your public IP via `ipinfo.io`, then the forecast comes
-from `api.open-meteo.com` — the same two services `daily-overview.ps1` uses. Both are
-keyless. WMO weather codes are mapped to text with the same table as the PowerShell
-script, so wording stays consistent across the app and this server.
-
-These are the only two tools that touch the network; both are annotated
-`openWorldHint: true`.
-
-## Setup
-
-Requires Python 3.10+ and the MCP SDK:
-
-```bash
-pip install "mcp[cli]"
-```
-
-## Register with Claude Code
-
-```bash
-claude mcp add daily-overview -- python "C:\Users\anshu\Desktop\Claude\daily-overview-mcp\server.py"
-```
-
-## Register with Claude Desktop
-
-Add to `%APPDATA%\Claude\claude_desktop_config.json`:
+[Model Context Protocol](https://modelcontextprotocol.io) is a standard for exposing tools to an LLM
+client. This server speaks MCP over stdio, so it is registered in the client config rather than run
+directly.
 
 ```json
 {
   "mcpServers": {
-    "daily-overview": {
-      "command": "python",
-      "args": ["C:\\Users\\anshu\\Desktop\\Claude\\daily-overview-mcp\\server.py"]
-    }
+    "daily-overview": { "command": "python", "args": ["C:/path/to/daily-overview-mcp/server.py"] }
   }
 }
 ```
 
-Restart Claude Desktop afterwards.
+**Register it twice if you use both Claude Code and Claude Desktop.** They read separate config files,
+and a server registered in one is invisible to the other — this cost real debugging time.
 
-## Test
+## Tests
 
-```bash
+```
 python test_server.py
 ```
 
-30 assertions covering parsing, all five planner-editing tools, date/time validation,
-section scoping, file integrity after edits, and the weather path. Uses a temporary
-planner — **it never touches your real `planner.md`.**
+Drives every tool through the real handlers and prints one `PASS` line per check. No pytest — the
+suite is a single script so it runs anywhere with no dev dependencies.
 
-## Config
+## License
 
-Reads `C:\Users\anshu\Desktop\Claude\daily-overview\planner.md` by default. Override with
-the `DAILY_OVERVIEW_PLANNER` environment variable.
-
-## Tech
-
-Python · MCP Python SDK (FastMCP) · Pydantic v2 · asyncio · open-meteo · stdlib urllib
+MIT — see [LICENSE](LICENSE).
