@@ -2,8 +2,8 @@
 """
 Daily Overview MCP Server.
 
-A local MCP server over the Daily Overview app
-(C:\\Users\\anshu\\Desktop\\Claude\\daily-overview), exposing your planner and
+A local MCP server over the Daily Overview app's planner.md
+(set DAILY_OVERVIEW_PLANNER to its path), exposing your planner and
 live weather to any MCP client — so any assistant can read and update your
 tasks instead of hand-editing planner.md.
 
@@ -34,6 +34,7 @@ from __future__ import annotations
 
 import datetime
 import json
+import logging
 import os
 import re
 import threading
@@ -50,11 +51,15 @@ from mcp.server.fastmcp import FastMCP
 # ---------------------------------------------------------------------------
 
 mcp = FastMCP("dailyoverview_mcp")
+log = logging.getLogger("dailyoverview_mcp")  # stdio transport: logs go to stderr, never stdout
 
-# The Daily Overview app's own planner. Override with DAILY_OVERVIEW_PLANNER.
+# Path to the planner markdown file. Set DAILY_OVERVIEW_PLANNER; the fallback is
+# <home>/Desktop/Claude/daily-overview/planner.md (home = %USERPROFILE% on Windows).
 PLANNER_FILE = os.environ.get(
     "DAILY_OVERVIEW_PLANNER",
-    r"C:\Users\anshu\Desktop\Claude\daily-overview\planner.md",
+    os.path.join(
+        os.path.expanduser("~"), "Desktop", "Claude", "daily-overview", "planner.md"
+    ),
 )
 
 # Network timeout (seconds) for the two weather lookups.
@@ -197,6 +202,7 @@ def _categorized() -> Dict[str, Any]:
             try:
                 dd = datetime.date.fromisoformat(mm.group(1))
             except ValueError:
+                log.warning("Skipping scheduled line with invalid date: %r", t)
                 continue
             tm, what = mm.group(2), mm.group(3).strip()
             if dd == today:
@@ -221,6 +227,7 @@ def _categorized() -> Dict[str, Any]:
             try:
                 dd = datetime.date.fromisoformat(due)
             except ValueError:
+                log.warning("Task has invalid due date %r, treating as open: %r", due, t)
                 dd = None
             if dd == today:
                 due_today.append(body)
@@ -414,7 +421,7 @@ class AddTaskInput(BaseModel):
         try:
             datetime.date.fromisoformat(v.strip())
         except ValueError:
-            raise ValueError(f"due must be YYYY-MM-DD, got '{v}'")
+            raise ValueError(f"due must be YYYY-MM-DD, got '{v}'") from None
         return v.strip()
 
 
@@ -455,7 +462,7 @@ class AddScheduledInput(BaseModel):
         try:
             datetime.date.fromisoformat(v.strip())
         except ValueError:
-            raise ValueError(f"date must be YYYY-MM-DD, got '{v}'")
+            raise ValueError(f"date must be YYYY-MM-DD, got '{v}'") from None
         return v.strip()
 
     @field_validator("time")
