@@ -6,3 +6,6 @@ __pycache__/
 *.pyc
 .venv/
 venv/
+.ruff_cache/
+*.egg-info/
+build/

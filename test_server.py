@@ -10,6 +10,7 @@ Run:  python test_server.py
 
 import asyncio
 import datetime
+import importlib
 import json
 import os
 import tempfile
@@ -137,6 +138,34 @@ async def main() -> None:
 
     b = await s.overview_briefing(s.BriefingInput())
     ok("Briefing" in b and "Planner" in b, "briefing combines weather and planner")
+
+    # 9. Hand-edited planners with impossible dates are skipped/degraded, not fatal
+    with open(_planner, "w", encoding="utf-8") as fh:
+        fh.write(
+            "# Planner\n\n## Recurring\n\n"
+            "## Scheduled\n- 2026-13-45 impossible date\n\n"
+            "## Tasks\n- [ ] Bad due (due: 2026-02-31)\n- [ ] Fine task\n"
+        )
+    d = json.loads(await s.overview_get_tasks(s.GetTasksInput(response_format=J)))
+    ok(d["scheduledToday"] == [] and d["upcoming"] == [], "impossible scheduled date skipped")
+    ok(any("Bad due" in t for t in d["open"]), "impossible due date falls back to open")
+    ok("Fine task" in d["open"], "valid tasks unaffected by malformed neighbours")
+
+    # 10. Configuration: the env var wins, and the fallback is home-relative
+    ok(s.PLANNER_FILE == _planner, "DAILY_OVERVIEW_PLANNER env var sets the planner path")
+    del os.environ["DAILY_OVERVIEW_PLANNER"]
+    try:
+        s2 = importlib.reload(s)
+        ok(
+            s2.PLANNER_FILE
+            == os.path.join(
+                os.path.expanduser("~"), "Desktop", "Claude", "daily-overview", "planner.md"
+            ),
+            "fallback planner path is derived from the home directory",
+        )
+    finally:
+        os.environ["DAILY_OVERVIEW_PLANNER"] = _planner
+        importlib.reload(s)
 
     print("\nAll daily-overview tests passed.")
 

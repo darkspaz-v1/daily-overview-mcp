@@ -1,0 +1,20 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "daily-overview-mcp"
+version = "0.1.0"
+description = "MCP server over a markdown planner and a live weather lookup: tasks, scheduled events and a daily briefing."
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.11"
+dependencies = [
+    "mcp>=1.28,<2",
+    "pydantic>=2.13,<3",
+]
+
+# server.py is a script-style module with no main() function, so there is no
+# console-script entry point: run it with `python server.py` (see README).
+[tool.setuptools]
+py-modules = ["server"]
