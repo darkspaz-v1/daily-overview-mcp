@@ -5,24 +5,62 @@
 An MCP server that lets Claude read and edit your markdown planner and answer "what does my day look like?" with
 tasks, schedule and weather in a single tool call.
 
-[Register it](#register-it) · [Example session](#example-session) · [Tools](#tools) · [Architecture](#architecture) · [Tests](#tests)
+Real output, one call, against the invented planner in `examples/demo_client.py` — never your real `planner.md`:
+
+```text
+>>> overview_get_tasks {}
+# Planner — 2026-09-22
+
+## Overdue
+- Submit lab report 3 (was due 2026-09-20)
+
+## Scheduled today
+- 09:30 - Team standup
+- 13:00 - Lunch with Sam
+- 16:15 - Study group: Intro to Algorithms
+
+## Due today
+- Finish problem set 4
+- Reply to landlord about the lease renewal
+
+## Open tasks
+- Draft project proposal outline (due 2026-09-26)
+- Renew library books (due 2026-09-29)
+- Buy a birthday gift for Alex
+- Organize the photo backup folder
+
+## Daily routine
+- Morning stretch and water
+- Review inbox for 10 minutes
+- Evening walk
+
+## Upcoming (next 7 days)
+- 2026-09-23 10:00 Dentist appointment
+- 2026-09-25 18:30 Pottery class
+- 2026-09-27 11:00 Farmers market run
+
+_7 open task(s) total._
+```
+
+[Register it](#register-it) · [Example session](#example-session) · [Tools](#tools) · [Architecture](#architecture) · [Known limitations](#known-limitations) · [Tests](#tests)
 
 ## Tools
 
 Seven tools, served over stdio:
 
-| Tool | Does | Read-only |
-|---|---|---|
-| `overview_get_tasks` | Read open tasks from `planner.md`, grouped as overdue / today / open / upcoming | yes |
-| `overview_add_task` | Append a task, optionally with a due date | no |
-| `overview_complete_task` | Mark one done | no |
-| `overview_add_scheduled` | Add a dated/timed item | no |
-| `overview_remove_item` | Remove a task or scheduled item | no |
-| `overview_get_weather` | IP-geolocated forecast, `days` configurable | yes |
-| `overview_briefing` | Weather plus the day's tasks in one call | yes |
+| Tool | Does | Read-only | Destructive |
+|---|---|---|---|
+| `overview_get_tasks` | Read open tasks from `planner.md`, grouped as overdue / today / open / upcoming | yes | no |
+| `overview_add_task` | Append a task, optionally with a due date | no | no |
+| `overview_complete_task` | Mark one done | no | no |
+| `overview_add_scheduled` | Add a dated/timed item | no | no |
+| `overview_remove_item` | Remove a task or scheduled item | no | **yes** |
+| `overview_get_weather` | IP-geolocated forecast, `days` configurable | yes | no |
+| `overview_briefing` | Weather plus the day's tasks in one call | yes | no |
 
-The "Read-only" column is each tool's `readOnlyHint` annotation in `server.py`. The write tools edit your
-`planner.md` in place.
+The "Read-only" and "Destructive" columns are each tool's `readOnlyHint`/`destructiveHint` annotation in
+`server.py`. The write tools edit your `planner.md` in place. `overview_remove_item` is the only destructive
+tool — see [Known limitations](#known-limitations) for what that means in practice.
 
 ## Register it
 
@@ -86,10 +124,10 @@ throwaway planner of invented data (dates are relative to the day you run it), a
 TOOLS ['overview_get_tasks', 'overview_add_task', 'overview_complete_task', 'overview_add_scheduled', 'overview_remove_item', 'overview_get_weather', 'overview_briefing']
 
 >>> overview_get_tasks {}
-# Planner — 2026-09-21
+# Planner — 2026-09-22
 
 ## Overdue
-- Submit lab report 3 (was due 2026-09-19)
+- Submit lab report 3 (was due 2026-09-20)
 
 ## Scheduled today
 - 09:30 - Team standup
@@ -101,8 +139,8 @@ TOOLS ['overview_get_tasks', 'overview_add_task', 'overview_complete_task', 'ove
 - Reply to landlord about the lease renewal
 
 ## Open tasks
-- Draft project proposal outline (due 2026-09-25)
-- Renew library books (due 2026-09-28)
+- Draft project proposal outline (due 2026-09-26)
+- Renew library books (due 2026-09-29)
 - Buy a birthday gift for Alex
 - Organize the photo backup folder
 
@@ -112,17 +150,17 @@ TOOLS ['overview_get_tasks', 'overview_add_task', 'overview_complete_task', 'ove
 - Evening walk
 
 ## Upcoming (next 7 days)
-- 2026-09-22 10:00 Dentist appointment
-- 2026-09-24 18:30 Pottery class
-- 2026-09-26 11:00 Farmers market run
+- 2026-09-23 10:00 Dentist appointment
+- 2026-09-25 18:30 Pottery class
+- 2026-09-27 11:00 Farmers market run
 
 _7 open task(s) total._
 
->>> overview_add_task {"text": "Book train tickets", "due": "2026-09-30"}
-Added task: Book train tickets (due 2026-09-30)
+>>> overview_add_task {"text": "Book train tickets", "due": "2026-10-01"}
+Added task: Book train tickets (due 2026-10-01)
 
 >>> overview_complete_task {"query": "problem set"}
-Completed: Finish problem set 4 (due: 2026-09-21)
+Completed: Finish problem set 4 (due: 2026-09-22)
 ```
 
 Each `>>>` line is the tool name and the arguments the client sent; everything below it is the text the server returned.
@@ -165,6 +203,25 @@ two round trips and a client-side join.
 - The weather tools need network and use your IP address to find your approximate location (ipinfo.io, then
   open-meteo.com for the forecast). If the lookup fails, the test asserts the **error path** behaved
   correctly instead of failing the run — a test suite that only passes online is not a test suite.
+
+## Known limitations
+
+- **Single local file, no sync.** `planner.md` lives at one path on one machine
+  (`DAILY_OVERVIEW_PLANNER`, or the Windows-shaped default under `~/Desktop/Claude/daily-overview/`).
+  There is no multi-device sync and no server-side history — if you edit the planner from two
+  machines, the second write wins with no merge or conflict warning.
+- **`overview_remove_item` deletes with no confirmation step.** It permanently removes the
+  matched line from `planner.md` on the first call — there is no dry run, no "are you sure",
+  and no undo. If a query is ambiguous, it matches whichever line is found first while
+  scanning the target section(s), not necessarily the one you meant. Prefer
+  `overview_complete_task` for anything you actually finished, since that keeps the line
+  (see the "Tools" table above); only reach for `overview_remove_item` when you specifically
+  want the record gone.
+- **Windows-flavored path defaults.** The fallback planner path
+  (`~/Desktop/Claude/daily-overview/planner.md`) and the config examples above assume a
+  Windows layout. The server itself is plain Python and should run on macOS/Linux, but you
+  must set `DAILY_OVERVIEW_PLANNER` explicitly there — the default will not resolve to
+  anything meaningful.
 
 ## About MCP
 
